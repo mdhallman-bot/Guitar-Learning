@@ -303,6 +303,70 @@ function coachContext(){
 }
 function coachThreadId(){const c=coachContext();return c.area+'|'+c.key+'|'+(c.chord||'')+'|'+(c.topic||'')}
 function coachThreads(){if(!state.coachThreads)state.coachThreads={};return state.coachThreads}
+
+const GPT_DESTINATION_KEY='fretboardFreedom.gptProject.v1';
+function gptProjectUrl(){
+ try{return localStorage.getItem(GPT_DESTINATION_KEY)||''}catch{return ''}
+}
+function gptDestination(raw){
+ const value=String(raw||'').trim();
+ if(!value)return 'https://chatgpt.com/';
+ try{
+  const u=new URL(value);
+  if(u.protocol==='https:'&&u.hostname==='chatgpt.com'&&(u.pathname.startsWith('/g/g-p-')||u.pathname.startsWith('/project/')))return u.origin+u.pathname;
+ }catch{}
+ return null;
+}
+function guitarChatContext(){
+ const c=coachContext(),st=initStudioState(),scale=MAJOR_SCALE_SPELLING[c.key]||MAJOR_SCALE_SPELLING.G;
+ const triad=MAJOR_TRIADS.find(t=>t[0]===c.chord);
+ const progress=JAM_KEYS.find(k=>k.key===c.key);
+ const lines=[
+ 'I am practicing guitar in Fretboard Freedom. Continue as my patient, interactive guitar theory and improvisation tutor.',
+ 'CURRENT PAGE: '+c.area,
+ 'KEY: '+c.key+' major',
+ 'MAJOR SCALE: '+scale.join(' - '),
+ 'PRACTICE FOCUS: '+(c.style==='bluegrass'?'Bluegrass jam confidence: follow called keys, play rhythm, improvise breaks and navigate all fretboard positions.':'Electric guitar: exploratory blues/jam-rock soloing with a Ditto+ looper, overdrive and chorus.'),
+ 'CURRENT TEMPO: '+c.tempo+' BPM'
+ ];
+ if(progress)lines.push('I-IV-V CHORDS: '+progress.key+' major ('+progress.triad.join(', ')+'), '+progress.four+' major ('+CHORD_TRIAD(progress.four).join(', ')+'), '+progress.five+' major ('+CHORD_TRIAD(progress.five).join(', ')+')');
+ if(c.area==='Triad Trainer'){
+  const t=triadState(),active=MAJOR_TRIADS[t.view==='quiz'?t.card:t.chord];
+  lines.push('CURRENT TRIAD: '+active[0]+' major = '+active[2].join(', ')+'. Screen: '+(t.view==='quiz'?'flashcard recall':'step-by-step construction'));
+ }
+ if(page==='theory')lines.push('CURRENT THEORY TOPIC: '+(THEORY_TITLES[theoryTopic]||theoryTopic));
+ if(page==='studio')lines.push('CURRENT EXERCISE: '+(st.style==='electric'?'Ditto+ loop '+st.progression+'; '+SOUND_MISSIONS[st.challenge%SOUND_MISSIONS.length][0]:'identify I-IV-V, follow chord tones, improvise a bluegrass break'));
+ if(page==='learn'&&lessonData[state.lesson])lines.push('LESSON: '+lessonData[state.lesson].title);
+ lines.push('TEACHING STYLE: First answer my question directly. Explain terms in plain language, use the selected key, show all seven scale notes and visually distinguish the current 1-3-5 triad, explain why the notes work over each chord, give a practical guitar exercise, and ask one thoughtful check-for-understanding question when helpful. Do not assume I already know terminology. I want understanding that becomes spontaneous improvisation.');
+ lines.push('MY QUESTION: Please help me understand what I am studying on this page. I will ask follow-up questions.');
+ return lines.join('\n');
+}
+function setupGptLaunch(){
+ const link=$('gptLaunch'),copy=$('gptCopy'),saveLink=$('gptSaveLink'),input=$('gptProjectInput'),info=$('gptStatus');
+ if(!link||!copy||!saveLink||!input)return;
+ const configured=gptProjectUrl();
+ input.value=configured;
+ link.href=gptDestination(configured)||'https://chatgpt.com/';
+ link.addEventListener('click',()=>{
+  const content=guitarChatContext();
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+   navigator.clipboard.writeText(content).catch(()=>{try{localStorage.setItem('fretboardFreedom.pendingPrompt',content)}catch{}});
+  }else{try{localStorage.setItem('fretboardFreedom.pendingPrompt',content)}catch{}}
+ });
+ copy.onclick=async()=>{
+  try{await navigator.clipboard.writeText(guitarChatContext());info.textContent='Context copied. Paste into your ChatGPT conversation.'}
+  catch{const text=guitarChatContext();window.prompt('Copy this context to paste into ChatGPT:',text)}
+ };
+ saveLink.onclick=()=>{
+  const url=input.value.trim(),resolved=gptDestination(url);
+  if(!resolved){info.textContent='Please use the URL of your ChatGPT Project (chatgpt.com/g/g-p-… or chatgpt.com/project/…). Do not use a sharing or invitation link.';return}
+  try{if(url)localStorage.setItem(GPT_DESTINATION_KEY,resolved);else localStorage.removeItem(GPT_DESTINATION_KEY)}
+  catch{info.textContent='Browser settings cannot be saved. Try enabling site storage.';return}
+  link.href=resolved;
+  info.textContent=url?'Project destination saved on this device.':'Using regular ChatGPT new chat.';
+ };
+}
+
 let coachOpen=false,coachBusy=false;
 function renderCoach(){
  const root=$('coachRoot');if(!root)return;
@@ -312,9 +376,10 @@ function renderCoach(){
  (coachOpen?'<div class="coach-body"><div class="small muted">Context: '+escapeHtml(coachContext().area)+' · '+escapeHtml(coachContext().key)+' major. Ask follow-ups; your conversation is saved on this device and in progress backups.</div>'+
  '<div id="coachLog" class="coach-log">'+(messages||'<div class="small muted">What would you like to understand? For example: Why does this chord use a third? How would I play it at a jam?</div>')+'</div>'+
  '<textarea id="coachQuestion" maxlength="1200" placeholder="Ask about the theory on this page…"></textarea>'+
- '<div class="controls"><button id="coachSend" class="primary" '+(coachBusy?'disabled':'')+'>Ask coach</button><button id="coachClear" '+(coachBusy?'disabled':'')+'>Clear conversation</button></div><p id="coachStatus" class="small muted">'+(!safeKey(cloud.key)?'To use AI, connect your profile code in Progress first.':'AI replies require the updated Apps Script deployment.')+'</p></div>':'')+'</div>';
+ '<div class="controls"><button id="coachSend" class="primary" '+(coachBusy?'disabled':'')+'>Ask coach</button><button id="coachClear" '+(coachBusy?'disabled':'')+'>Clear conversation</button></div><div class="theory-mini"><strong>Continue in your ChatGPT Project</strong><p class="small muted">Copies the lesson context for you. Open ChatGPT and paste it into a new or existing Project conversation. If you save your Guitar Project link below, this button opens it directly.</p><div class="controls"><a id="gptLaunch" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer" style="display:inline-block;border-radius:8px;padding:10px;background:#27766b;color:white;font-weight:bold;text-decoration:none">↗ Open ChatGPT / Project</a><button id="gptCopy">Copy lesson context</button></div><label for="gptProjectInput" class="small">Your private Guitar Project URL (optional)</label><input id="gptProjectInput" type="url" placeholder="https://chatgpt.com/g/g-p-…" style="width:100%;margin:8px 0;padding:9px;border-radius:7px;background:#112537;color:white;border:1px solid #677e8b"><button id="gptSaveLink">Save destination</button><p id="gptStatus" class="small muted">The context is copied when you open ChatGPT. Paste it there; the app cannot automatically start a Project chat.</p></div><p id="coachStatus" class="small muted">'+(!safeKey(cloud.key)?'To use AI, connect your profile code in Progress first.':'AI replies require the updated Apps Script deployment.')+'</p></div>':'')+'</div>';
  $('coachToggle').onclick=()=>{coachOpen=!coachOpen;renderCoach()};
  if(!coachOpen)return;
+ setupGptLaunch();
  const log=$('coachLog');log.scrollTop=log.scrollHeight;
  $('coachClear').onclick=()=>{delete coachThreads()[thread];save();renderCoach()};
  $('coachSend').onclick=()=>sendCoachQuestion(thread);
